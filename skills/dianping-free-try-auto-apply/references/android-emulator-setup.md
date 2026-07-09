@@ -1,41 +1,41 @@
-# Android emulator setup for Dianping free-try automation
+# Android 模拟器配置参考
 
-Use this reference when the machine has no Android automation environment.
+当一台新电脑还没有 Android 自动化环境时，按这份参考配置。
 
-## Scope and safety
+## 范围和安全边界
 
-- Automate only the user's own Dianping account.
-- Do not bypass captcha, face verification, payment password, login, or account-security challenges.
-- Stop and ask the user whenever a verification/security page appears.
-- Do not bundle third-party APK files in the repository. Ask the user to provide official Dianping and WeChat APKs, or install them manually.
-- Never store SMS codes, passwords, payment passwords, or personal identity data in repo files.
+- 只辅助用户自己的大众点评账号。
+- 不绕过验证码、人脸验证、支付密码、登录或账号安全校验。
+- 只要出现验证或安全页面，就停止并让用户本人处理。
+- 不要把第三方 APK 文件放进仓库。大众点评和微信 APK 应由用户自行下载或手动安装。
+- 不要在仓库里保存短信验证码、密码、支付密码或个人身份信息。
 
-## macOS setup
+## macOS 环境配置
 
-1. Install Android Studio from the official Android developer site.
-2. In Android Studio SDK Manager, install:
+1. 从 Android 官方网站安装 Android Studio。
+2. 在 Android Studio 的 SDK Manager 中安装：
    - Android SDK Platform-Tools
    - Android Emulator
-   - An Android system image, preferably API 35 Google APIs/Play image for arm64 on Apple Silicon.
-3. Create an AVD in Device Manager:
-   - Name: `Pixel_API_35_DP`
-   - Resolution: `1080x2400`
-   - RAM: at least `2560 MB`
-   - Front camera: a real webcam if login verification requires camera
-4. Add SDK tools to the shell environment if needed:
+   - Android 系统镜像；Apple Silicon 机器建议 API 35 Google APIs / Play arm64 镜像
+3. 在 Device Manager 中创建 AVD：
+   - 名称：`Pixel_API_35_DP`
+   - 分辨率：`1080x2400`
+   - 内存：至少 `2560 MB`
+   - 前置摄像头：如果登录验证需要摄像头，选择真实摄像头
+4. 如有需要，把 SDK 工具加入 shell 环境：
 
 ```bash
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
 ```
 
-5. Verify the environment from the skill folder:
+5. 在 Skill 目录下检查环境：
 
 ```bash
 bash scripts/check_android_env.sh Pixel_API_35_DP
 ```
 
-## Start the emulator
+## 启动模拟器
 
 ```bash
 emulator -avd Pixel_API_35_DP
@@ -43,62 +43,62 @@ adb devices -l
 adb shell wm size
 ```
 
-Expected screen size is `1080x2400`. If an extra emulator display appears, remove it:
+期望屏幕尺寸为 `1080x2400`。如果出现额外模拟器屏幕，可以删除：
 
 ```bash
 adb emu multidisplay del 1
 ```
 
-## Install apps
+## 安装 App
 
-Install user-provided official APKs:
+安装用户自行提供的官方 APK：
 
 ```bash
 adb install -r /path/to/dianping.apk
 adb install -r /path/to/wechat.apk
 ```
 
-Known package names:
+常见包名：
 
-- Dianping: `com.dianping.v1`
-- WeChat: `com.tencent.mm`
+- 大众点评：`com.dianping.v1`
+- 微信：`com.tencent.mm`
 
-Verify:
+检查安装状态：
 
 ```bash
 adb shell dumpsys package com.dianping.v1 | grep -E 'versionName=|versionCode='
 adb shell dumpsys package com.tencent.mm | grep -E 'versionName=|versionCode='
 ```
 
-## Login and persistence
+## 登录和登录态保留
 
-1. Log into WeChat first.
-2. Log into Dianping using the user's normal official flow.
-3. If Dianping asks for SMS, payment-password, WeChat authorization, face, captcha, or account security, stop for user input.
-4. Do not clear app data. Force-stopping the app is allowed and normally preserves login:
+1. 如果需要微信登录，先登录微信。
+2. 使用用户自己的正常官方流程登录大众点评。
+3. 如果大众点评要求短信、支付密码、微信授权、人脸、验证码或账号安全校验，停止并让用户本人处理。
+4. 不要清除 App 数据。可以强停 App，通常不会清掉登录态：
 
 ```bash
 adb shell am force-stop com.dianping.v1
 ```
 
-## Useful routes
+## 常用路由
 
-Free-try index:
+免费试首页：
 
 ```bash
 adb shell "am start -a android.intent.action.VIEW -d 'dianping://picassobox?picassoid=pexus-freetry-index%2Findex-bundle.js&notitlebar=true' -p com.dianping.v1"
 ```
 
-Free-try detail:
+免费试详情页：
 
 ```bash
 adb shell "am start -a android.intent.action.VIEW -d 'dianping://picassobox?picassoid=pexus-freetry-detail%2Findex-bundle.js&offlineActivityId=ACTIVITY_ID&notitlebar=true' -p com.dianping.v1"
 ```
 
-## Troubleshooting
+## 常见问题
 
-- `adb devices` empty: restart the emulator and `adb kill-server && adb start-server`.
-- `adb shell am ...` fails while device is visible: wait until `adb shell getprop sys.boot_completed` prints `1`.
-- Detail deeplink opens the previous activity: use `--force-stop-before-open --precheck-detail` in the batch script.
-- Agreement checkbox fails: inspect `*_agreement_failed.png`. If still on detail page, CTA coordinate or route reuse is the issue. If on the confirmation sheet, adjust checkbox crop/tap coordinates.
-- UI automation should stop on captcha/login/security keywords.
+- `adb devices` 为空：重启模拟器，并执行 `adb kill-server && adb start-server`
+- 设备可见但 `adb shell am ...` 失败：等待 `adb shell getprop sys.boot_completed` 输出 `1`
+- 详情 deeplink 打开的是上一个活动：报名脚本加 `--force-stop-before-open --precheck-detail`
+- 协议勾选失败：查看 `*_agreement_failed.png`；如果还停在详情页，通常是 CTA 坐标或路由复用问题；如果已经在确认弹层，调整协议勾选区域
+- UI 自动化遇到验证码、登录或安全关键词时应停止

@@ -1,43 +1,43 @@
 ---
 name: dianping-free-try-auto-apply
-description: "End-to-end Android emulator workflow for the user's own Dianping free-try automation: set up a macOS Android emulator, install/login Dianping and WeChat, scan Beijing free-try activities, filter food packages by the user's default rules, and apply through the Dianping app with ADB UI automation. Use when asked to continue, set up, troubleshoot, rescan, or run this Dianping 免费试 / 霸王餐报名 workflow."
+description: "大众点评免费试报名辅助 Skill：从 macOS Android 模拟器配置开始，安装并登录大众点评/微信，扫描北京免费试活动，按默认规则筛选美食套餐，并通过 ADB 在大众点评 App 内完成报名。适用于继续、配置、排查、复扫或运行大众点评免费试/霸王餐报名辅助流程。"
 ---
 
-# Dianping free-try auto apply
+# 大众点评免费试报名助手
 
-## Default policy
+## 默认原则
 
-Use this skill only for the user's own account and normal official app flow. Do not bypass captcha, face verification, payment password, SMS, login, or account-security pages. If any of those appear, stop and ask the user.
+只辅助用户自己的大众点评账号完成官方 App 内的正常操作。不要绕过验证码、人脸验证、支付密码、短信验证、登录或账号安全校验；一旦出现这些页面，立即停止并让用户本人处理。
 
-Default filter rules:
+默认筛选规则：
 
-- City: Beijing, `cityId=2`.
-- Category: food only, Dianping detail `type=1`.
-- Exclude districts: 房山区、门头沟区、怀柔区、平谷区、密云区、延庆区、昌平区、石景山区.
-- Include normal food packages with original value `>= 200`.
-- Include Tongzhou food packages with original value `>= 150`.
-- De-duplicate by `offlineActivityId`.
+- 城市：北京，`cityId=2`
+- 分类：仅美食，大众点评详情接口 `type=1`
+- 排除区域：房山区、门头沟区、怀柔区、平谷区、密云区、延庆区、昌平区、石景山区
+- 普通美食套餐：原价 `>= 200`
+- 通州区美食套餐：原价 `>= 150`
+- 按 `offlineActivityId` 去重
 
-Never commit or store SMS codes, payment passwords, personal passwords, cookies, app data, or APK files.
+不要保存或提交短信验证码、支付密码、账号密码、Cookie、App 数据或 APK 文件。
 
-## Resources
+## 资源说明
 
-- `scripts/free_try_filter.py`: read-only scanner/filter. Produces `reports/free_try_candidates_beijing.csv`.
-- `scripts/batch_apply_free_try_adb.py`: batch ADB app UI applicator. Uses `reports/free_try_apply_state.json`.
-- `scripts/apply_free_try_adb.py`: single activity debugging applicator.
-- `scripts/check_android_env.sh`: local Android/ADB/Python environment check.
-- `references/android-emulator-setup.md`: full setup, login, route, and troubleshooting notes. Read it when setting up a new computer or emulator.
+- `scripts/free_try_filter.py`：只读扫描和筛选脚本，输出 `reports/free_try_candidates_beijing.csv`
+- `scripts/batch_apply_free_try_adb.py`：批量 ADB 报名脚本，使用 `reports/free_try_apply_state.json` 记录本地状态
+- `scripts/apply_free_try_adb.py`：单活动调试脚本
+- `scripts/check_android_env.sh`：本地 Android / ADB / Python 环境检查脚本
+- `references/android-emulator-setup.md`：新电脑或新模拟器配置参考
 
-## End-to-end workflow
+## 端到端流程
 
-1. If the machine is not already configured, read `references/android-emulator-setup.md` and set up Android Studio, SDK tools, and the `Pixel_API_35_DP` emulator.
-2. Verify the local environment:
+1. 如果机器还没配置 Android 环境，先读取 `references/android-emulator-setup.md`，安装 Android Studio、SDK tools，并创建 `Pixel_API_35_DP` 模拟器。
+2. 检查本地环境：
 
 ```bash
 bash scripts/check_android_env.sh Pixel_API_35_DP
 ```
 
-3. Start or verify the emulator:
+3. 启动或确认模拟器：
 
 ```bash
 adb devices -l
@@ -45,16 +45,16 @@ adb shell wm size
 adb shell getprop sys.boot_completed
 ```
 
-Expected screen size is `1080x2400`; the batch script coordinates assume this layout.
+期望屏幕尺寸是 `1080x2400`，批量报名脚本的坐标按这个布局设计。
 
-4. Ensure Dianping and WeChat are installed and logged in. If login is not complete, guide the user through official login. Do not automate or bypass security verification.
-5. Scan all current activities:
+4. 确认大众点评和微信已经安装并登录。若未登录，引导用户走官方登录流程；不要自动化或绕过安全验证。
+5. 扫描当前全部活动：
 
 ```bash
 python3 scripts/free_try_filter.py --max-pages 100 --workers 6 --top 10
 ```
 
-6. Count remaining eligible food activities:
+6. 统计剩余符合条件的美食活动：
 
 ```bash
 python3 - <<'PY'
@@ -75,7 +75,7 @@ for row in remaining[:20]:
 PY
 ```
 
-7. Apply remaining activities. Start with the stable mode when moving to a new computer:
+7. 报名剩余活动。新电脑或新模拟器建议先用稳定模式：
 
 ```bash
 python3 scripts/batch_apply_free_try_adb.py \
@@ -92,12 +92,12 @@ python3 scripts/batch_apply_free_try_adb.py \
   --save-result-screenshot
 ```
 
-For a known-good `1080x2400` emulator, faster mode can be used:
+已验证稳定的 `1080x2400` 模拟器可以小批量测试加速模式：
 
 ```bash
 python3 scripts/batch_apply_free_try_adb.py \
   --food-only \
-  --max-apply 500 \
+  --max-apply 20 \
   --detail-wait 2.4 \
   --sheet-wait 1.7 \
   --agreement-tap-wait 0.3 \
@@ -106,7 +106,7 @@ python3 scripts/batch_apply_free_try_adb.py \
   --delay 0.4
 ```
 
-8. After a batch finishes, force-stop/re-enter the free-try index and rescan:
+8. 每轮批量结束后，强停并重新进入免费试首页，再复扫：
 
 ```bash
 adb shell am force-stop com.dianping.v1
@@ -115,13 +115,13 @@ sleep 5
 python3 scripts/free_try_filter.py --max-pages 100 --workers 6 --top 0
 ```
 
-Repeat scan/apply until remaining eligible food count is `0`.
+重复扫描和报名，直到剩余符合条件美食活动数为 `0`。
 
-## Operational notes
+## 操作注意事项
 
-- The scanner caches detail JSON under `.cache/details/`; use `--refresh-details` only when data may be stale.
-- If `adb devices` loses the emulator, restart ADB and wait for boot completion before continuing.
-- The batch script writes state after every item. Rerunning is safe; it skips IDs already in `success`.
-- If screenshots show the previous detail page instead of the target activity, rerun with `--force-stop-before-open --precheck-detail`.
-- If the agreement checkbox fails, inspect `*_agreement_failed.png`. Do not click confirm unless the orange agreement state is detected.
-- Typical stable speed is about `10-14s` per item on the known emulator. Further speedups should be validated in small batches.
+- 扫描详情会缓存到 `.cache/details/`；只有怀疑数据过期时才使用 `--refresh-details`
+- 如果 `adb devices` 看不到模拟器，重启 ADB 并等待系统启动完成
+- 批量脚本每处理一个活动都会写入状态文件，重复运行会跳过已成功 ID
+- 如果截图显示打开的是上一个活动详情页，使用 `--force-stop-before-open --precheck-detail`
+- 如果协议勾选失败，检查 `*_agreement_failed.png`；不要在未检测到橙色协议选中态时点击确认
+- 稳定速度通常约 `10-14 秒/个`；进一步提速应先小批量验证

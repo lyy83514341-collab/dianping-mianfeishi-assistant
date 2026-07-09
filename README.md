@@ -1,30 +1,26 @@
-# Dianping Free Try Auto Apply
+# 大众点评免费试报名助手
 
-Android emulator + ADB automation for scanning and applying to Dianping 大众点评 “免费试 / 霸王餐” activities with a reusable Codex skill.
+基于 Android 模拟器和 ADB 的大众点评“免费试 / 霸王餐”报名辅助工具，支持活动扫描、价格筛选、区域排除、App 内报名，以及可复用的 Codex Skill 工作流。
 
-This repository is designed for a single user automating their own account through the official Dianping app flow. It does not bypass login, captcha, face verification, payment password, SMS, or account-security checks.
+本项目面向个人账号的正常 App 操作辅助，不提供也不支持绕过登录、验证码、人脸验证、支付密码、短信验证或账号安全校验。
 
-## What is included
+## 功能
 
-- `scripts/free_try_filter.py`  
-  Scans Beijing free-try activities, fetches detail data, maps shop coordinates to districts, and writes a filtered CSV.
+- 扫描北京大众点评免费试活动
+- 拉取活动详情、套餐原价、门店信息和门店坐标
+- 根据北京行政区边界判断门店所在区
+- 按默认规则筛选美食活动
+- 通过 ADB 打开大众点评 App 内活动详情页并报名
+- 记录本地报名状态，重复运行时跳过已成功活动
+- 提供 Codex Skill，方便在新电脑上复用整套流程
 
-- `scripts/batch_apply_free_try_adb.py`  
-  Uses ADB to open Dianping activity detail pages and apply through the app UI.
+## 默认筛选规则
 
-- `scripts/apply_free_try_adb.py`  
-  Single-activity debugging helper.
+当前默认规则：
 
-- `skills/dianping-free-try-auto-apply/`  
-  A Codex skill package with the same workflow, scripts, and emulator setup reference.
-
-## Default filter rules
-
-The bundled workflow defaults to:
-
-- City: Beijing
-- Category: food only
-- Excluded districts:
+- 城市：北京
+- 分类：仅美食
+- 排除区域：
   - 房山区
   - 门头沟区
   - 怀柔区
@@ -33,48 +29,60 @@ The bundled workflow defaults to:
   - 延庆区
   - 昌平区
   - 石景山区
-- Include normal food packages with original value `>= 200`
-- Include Tongzhou food packages with original value `>= 150`
+- 普通美食套餐：原价 `>= 200`
+- 通州区美食套餐：原价 `>= 150`
 
-## Safety boundaries
+规则写在 `scripts/free_try_filter.py` 里，可以按自己的需求调整。
 
-Stop the automation and require user action if any of these appear:
+## 安全边界
 
-- Login page
-- SMS verification
-- Captcha
-- Account-security verification
-- Face verification
-- Payment password
-- Any unexpected or unknown page state
+如果出现以下页面或状态，应停止自动化并由用户本人处理：
 
-Do not commit app data, cookies, SMS codes, passwords, screenshots containing personal data, generated reports, or API/cache output.
+- 登录页
+- 短信验证码
+- 图形验证码
+- 账号安全验证
+- 人脸验证
+- 支付密码
+- 任何未知页面或异常状态
 
-## Requirements
+不要提交或公开以下内容：
+
+- App 数据
+- Cookie / Token
+- 短信验证码
+- 密码 / 支付密码
+- 带个人信息的截图
+- 本地报名状态
+- 接口缓存
+
+## 环境要求
 
 - macOS
 - Android Studio / Android SDK
 - Android Emulator
-- A Dianping APK installed by the user
-- Optional WeChat APK installed by the user if the account login flow requires it
+- 用户自行安装的大众点评 APK
+- 如果登录流程需要微信，则用户自行安装微信 APK
 - Python 3
-- Pillow:
+- Pillow
+
+安装 Python 依赖：
 
 ```bash
 python3 -m pip install pillow
 ```
 
-The tested layout is an Android emulator with `1080x2400` resolution. UI coordinates in the batch script assume that layout.
+当前脚本默认按 `1080x2400` 模拟器分辨率设计，批量报名脚本里的 UI 坐标依赖这个布局。
 
-## Quick start
+## 快速开始
 
-Check the Android environment:
+检查 Android 环境：
 
 ```bash
 bash skills/dianping-free-try-auto-apply/scripts/check_android_env.sh Pixel_API_35_DP
 ```
 
-Start or verify the emulator:
+确认模拟器和 ADB 状态：
 
 ```bash
 adb devices -l
@@ -82,13 +90,13 @@ adb shell wm size
 adb shell getprop sys.boot_completed
 ```
 
-Scan activities:
+扫描活动：
 
 ```bash
 python3 scripts/free_try_filter.py --max-pages 100 --workers 6 --top 20
 ```
 
-Apply eligible food activities:
+稳定模式报名：
 
 ```bash
 python3 scripts/batch_apply_free_try_adb.py \
@@ -105,7 +113,7 @@ python3 scripts/batch_apply_free_try_adb.py \
   --save-result-screenshot
 ```
 
-For a known-good emulator, a faster mode can be tried in small batches first:
+如果你的模拟器环境稳定，可以先小批量测试加速模式：
 
 ```bash
 python3 scripts/batch_apply_free_try_adb.py \
@@ -119,38 +127,38 @@ python3 scripts/batch_apply_free_try_adb.py \
   --delay 0.4
 ```
 
-## Use the Codex skill
+## 使用 Codex Skill
 
-Copy the skill into your Codex skills directory:
+复制 Skill 到 Codex 技能目录：
 
 ```bash
 mkdir -p ~/.codex/skills
 cp -R skills/dianping-free-try-auto-apply ~/.codex/skills/
 ```
 
-Or link it from this checkout:
+或者从当前仓库软链：
 
 ```bash
 ln -s "$PWD/skills/dianping-free-try-auto-apply" ~/.codex/skills/dianping-free-try-auto-apply
 ```
 
-Then invoke it in Codex:
+在 Codex 中这样触发：
 
 ```text
 $dianping-free-try-auto-apply 帮我配置安卓模拟器并报名符合规则的大众点评免费试
 ```
 
-## Generated local files
+## 本地生成文件
 
-These paths are intentionally ignored by Git:
+以下路径已被 `.gitignore` 忽略：
 
 - `.cache/`
 - `reports/`
 - `.DS_Store`
 - `*.log`
 
-`reports/free_try_apply_state.json` is local state and should not be published.
+其中 `reports/free_try_apply_state.json` 是本地报名状态，不应该公开。
 
-## Notes
+## 免责声明
 
-The Dianping UI and APIs can change. Treat this as a personal automation assistant for normal app actions, not as a guarantee of stable long-term compatibility.
+大众点评页面、接口和风控策略可能变化。本项目只适合作为个人账号的正常操作辅助工具，不保证长期可用，也不建议用于多账号、绕过平台限制或违反平台规则的用途。
