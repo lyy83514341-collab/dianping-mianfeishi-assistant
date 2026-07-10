@@ -25,6 +25,14 @@ DEFAULT_CSV = Path("reports/free_try_candidates_beijing.csv")
 DEFAULT_STATE = Path("reports/free_try_apply_state.json")
 DEFAULT_OUT_DIR = Path("/tmp/free_try_batch")
 SECURITY_KEYWORDS = ["验证码", "身份验证", "账号安全", "支付密码", "人脸", "Yoda", "登录"]
+OFFICIAL_UNAVAILABLE_KEYWORDS = [
+    "当前活动太火爆",
+    "活动太火爆",
+    "请稍后再试",
+    "稍后再试",
+    "服务繁忙",
+    "系统繁忙",
+]
 
 
 def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -170,6 +178,8 @@ def apply_one(
             return "already_applied", detail_text
         if any(keyword in detail_text for keyword in SECURITY_KEYWORDS):
             return "security_stop", detail_text
+        if any(keyword in detail_text for keyword in OFFICIAL_UNAVAILABLE_KEYWORDS):
+            return "official_unavailable_stop", detail_text
 
     # Fixed bottom CTA in the tested 1080x2400 layout. The active button is
     # right-aligned on some detail templates; tapping its visual center is more
@@ -210,6 +220,8 @@ def apply_one(
         return "already_applied", text
     if any(keyword in text for keyword in SECURITY_KEYWORDS):
         return "security_stop", text
+    if any(keyword in text for keyword in OFFICIAL_UNAVAILABLE_KEYWORDS):
+        return "official_unavailable_stop", text
     return "unknown", text
 
 
@@ -280,6 +292,9 @@ def main() -> None:
         print(f"[{index}/{len(rows)}] status={status}", flush=True)
         if status == "security_stop":
             print("stopping_on_security_page", flush=True)
+            break
+        if status == "official_unavailable_stop":
+            print("stopping_on_official_unavailable_or_rate_limit", flush=True)
             break
         if status == "unknown":
             print("stopping_on_unknown_state", flush=True)

@@ -20,6 +20,36 @@ description: "大众点评免费试报名辅助 Skill：从 macOS Android 模拟
 
 不要保存或提交短信验证码、支付密码、账号密码、Cookie、App 数据或 APK 文件。
 
+## 活动火爆与限流处理
+
+区分**仅免费试首页**出现的 `当前活动太火爆了，请稍后再试～`，与活动详情页、确认页出现的同类提示。前者通常是 Picasso 首页列表路由异常，并不代表具体活动无法打开或报名。
+
+免费试首页提示火爆时：
+
+- 不要反复刷新或点击首页。
+- 继续使用 `reports/free_try_candidates_beijing.csv` 中已有的合格 `offlineActivityId`；`batch_apply_free_try_adb.py` 会直接打开官方 App 活动详情 deeplink，从而绕开首页列表。
+- 若没有可用活动 ID，可通过搜索引擎寻找点评官方 H5 详情页，例如：
+
+```text
+site:m.dianping.com/bwc/customer/bwcDetailPackage 大众点评 免费试 北京
+site:m.dianping.com 大众点评 免费试 北京 霸王餐
+site:m.dianping.com/bwc/customer 免费试 北京
+```
+
+- 在模拟器 Chrome 打开具体的 `https://m.dianping.com/bwc/customer/bwcDetailPackage...` 搜索结果，再点击官方 `打开App` / `打开大众点评` / `立即参与` 按钮进入 App 详情页。这只是首页列表的路由兜底；不要自行拼接或猜测活动 URL。
+
+```bash
+adb shell am start -a android.intent.action.VIEW -d 'H5_DETAIL_URL' com.android.chrome
+```
+
+如果活动详情页、确认页或 H5 详情路由本身也提示 `当前活动太火爆了，请稍后再试～`（或活动繁忙、服务繁忙、限流、稍后再试等同义提示）：
+
+- 停止当前批次，不要反复提交或点击该活动。
+- 将该活动记录为临时不可用，而不是报名成功，并提示后续重试。
+- 如有必要只核查一次网络；确认官方提示后，不要继续反复修改模拟器或代理设置。
+
+如果首页可以展示缓存活动卡片、但详情页持续空白超过 30 秒，先只核查一次模拟器网络/代理；网络正常且多个详情页均失败时，判定为点评详情加载或服务路由不稳定，停止本批次继续报名。
+
 ## 资源说明
 
 - `scripts/free_try_filter.py`：只读扫描和筛选脚本，输出 `reports/free_try_candidates_beijing.csv`
