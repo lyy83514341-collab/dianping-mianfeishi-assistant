@@ -61,13 +61,33 @@ adb shell am start -a android.intent.action.VIEW -d 'H5_DETAIL_URL' com.android.
 ## 端到端流程
 
 1. 如果机器还没配置 Android 环境，先读取 `references/android-emulator-setup.md`，安装 Android Studio、SDK tools，并创建 `Pixel_API_35_DP` 模拟器。
-2. 检查本地环境：
+2. 在这台 Mac 上，使用已验证的可视化启动路径启动模拟器：
+
+   - 打开 **Android Studio** -> **Tools** -> **Device Manager**。
+   - 在 `Pixel_API_35_DP` 这一行点击三角形 **Run** 按钮，并在启动期间保持 Android Studio 打开。
+   - 此路径已在 Apple Silicon、Android Emulator `36.6.11` 环境验证：模拟器启动后可保持 ADB 连接并正常显示。
+   - 不要把临时工具/终端中的 `emulator ... &` 作为首选可视化启动方式：在此环境中该后台进程可能在启动后消失，不能据此直接判断 AVD 损坏。尝试 Device Manager 前，不要反复试验 `-gpu software`、已弃用的 `-gpu swiftshader_indirect` 或临时 Vulkan 参数。
+
+   只用命令确认 Device Manager 启动完成：
+
+```bash
+for i in $(seq 1 45); do
+  adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -qx 1 && break
+  sleep 2
+done
+adb devices -l
+adb -s emulator-5554 shell wm size
+```
+
+   预期看到已连接的 `emulator-5554`、启动属性为 `1`、分辨率为 `1080x2400`。如果失败，先检查模拟器图形日志，再考虑网络或代理；本地 HTTP/SOCKS 代理可能影响点评内容加载，但不能单独证明模拟器进程被终止。
+
+3. 检查本地环境：
 
 ```bash
 bash scripts/check_android_env.sh Pixel_API_35_DP
 ```
 
-3. 启动或确认模拟器：
+4. 确认模拟器状态：
 
 ```bash
 adb devices -l
@@ -77,14 +97,14 @@ adb shell getprop sys.boot_completed
 
 期望屏幕尺寸是 `1080x2400`，批量报名脚本的坐标按这个布局设计。
 
-4. 确认大众点评和微信已经安装并登录。若未登录，引导用户走官方登录流程；不要自动化或绕过安全验证。
-5. 扫描当前全部活动：
+5. 确认大众点评和微信已经安装并登录。若未登录，引导用户走官方登录流程；不要自动化或绕过安全验证。
+6. 扫描当前全部活动：
 
 ```bash
 python3 scripts/free_try_filter.py --max-pages 100 --workers 6 --top 10
 ```
 
-6. 统计剩余符合条件的美食活动：
+7. 统计剩余符合条件的美食活动：
 
 ```bash
 python3 - <<'PY'
@@ -105,7 +125,7 @@ for row in remaining[:20]:
 PY
 ```
 
-7. 报名剩余活动。新电脑或新模拟器建议先用稳定模式：
+8. 报名剩余活动。新电脑或新模拟器建议先用稳定模式：
 
 ```bash
 python3 scripts/batch_apply_free_try_adb.py \
@@ -136,7 +156,7 @@ python3 scripts/batch_apply_free_try_adb.py \
   --delay 0.4
 ```
 
-8. 每轮批量结束后，强停并重新进入免费试首页，再复扫：
+9. 每轮批量结束后，强停并重新进入免费试首页，再复扫：
 
 ```bash
 adb shell am force-stop com.dianping.v1
