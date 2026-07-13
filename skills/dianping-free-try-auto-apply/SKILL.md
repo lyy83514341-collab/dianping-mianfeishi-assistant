@@ -1,177 +1,149 @@
 ---
 name: dianping-free-try-auto-apply
-description: "大众点评免费试报名辅助 Skill：从 macOS Android 模拟器配置开始，安装并登录大众点评/微信，扫描北京免费试活动，按默认规则筛选美食套餐，并通过 ADB 在大众点评 App 内完成报名。适用于继续、配置、排查、复扫或运行大众点评免费试/霸王餐报名辅助流程。"
+description: "自动化用户本人账号的大众点评免费试报名：在 Android 模拟器上每日刷新活动，按城市、分类、区域和价格筛选，优先从可见列表模拟人工点击，使用详情直达补齐遗漏，持久化进度，二次复扫确认，并在验证码、登录或安全校验时暂停。适用于环境配置、每日扫描报名、验证码后续跑、列表/网络/定位故障排查和流程优化。"
 ---
 
-# 大众点评免费试报名助手
+# 大众点评免费试自动报名
 
-## 默认原则
+将本 Skill 视为可根据真实 App 行为迭代的自动化系统，不要当作固定坐标点击脚本。优先使用 Skill 内置脚本。
 
-只辅助用户自己的大众点评账号完成官方 App 内的正常操作。不要绕过验证码、人脸验证、支付密码、短信验证、登录或账号安全校验；一旦出现这些页面，立即停止并让用户本人处理。
+将本文件所在目录记为 `SKILL_DIR`。从项目工作目录调用 `$SKILL_DIR/scripts/` 下的脚本，使状态保存在项目的 `reports/` 中。
 
-默认筛选规则：
+## 安全和账号范围
 
-- 城市：北京，`cityId=2`
-- 分类：仅美食，大众点评详情接口 `type=1`
-- 排除区域：房山区、门头沟区、怀柔区、平谷区、密云区、延庆区、昌平区、石景山区
-- 普通美食套餐：原价 `>= 200`
-- 通州区美食套餐：原价 `>= 150`
+- 只操作用户本人的账号和官方大众点评 App。
+- 不自动化或绕过验证码、人脸、短信、登录、支付密码和账号安全校验；出现时立即停止，让用户本人处理。
+- 不保存密码、短信验证码、Cookie、App 数据或 APK。
+- 不在空白详情页或未验证的确认状态上提交。
+
+## 默认筛选策略
+
+仓库附带以下可修改示例规则：
+
+- 北京，详情 `cityId=2`
+- 仅美食，详情 `type=1`
+- 排除房山、门头沟、怀柔、平谷、密云、延庆、昌平、石景山
+- 普通套餐原价 `>=200`；通州美食套餐原价 `>=150`
 - 按 `offlineActivityId` 去重
+- 不预先排除 V 专享、PASS 等会员标签，让登录后的官方 App 判断资格
 
-不要保存或提交短信验证码、支付密码、账号密码、Cookie、App 数据或 APK 文件。
+不要用页面显示距离判断活动城市。模拟器粗略定位错误时，北京商户也可能显示 `>100km`；应使用 `cityId`、门店坐标、行政区和区域数据。
 
-## 活动火爆与限流处理
+## 每日标准流程
 
-区分**仅免费试首页**出现的 `当前活动太火爆了，请稍后再试～`，与活动详情页、确认页出现的同类提示。前者通常是 Picasso 首页列表路由异常，并不代表具体活动无法打开或报名。
-
-免费试首页提示火爆时：
-
-- 不要反复刷新或点击首页。
-- 继续使用 `reports/free_try_candidates_beijing.csv` 中已有的合格 `offlineActivityId`；`batch_apply_free_try_adb.py` 会直接打开官方 App 活动详情 deeplink，从而绕开首页列表。
-- 若没有可用活动 ID，可通过搜索引擎寻找点评官方 H5 详情页，例如：
-
-```text
-site:m.dianping.com/bwc/customer/bwcDetailPackage 大众点评 免费试 北京
-site:m.dianping.com 大众点评 免费试 北京 霸王餐
-site:m.dianping.com/bwc/customer 免费试 北京
-```
-
-- 在模拟器 Chrome 打开具体的 `https://m.dianping.com/bwc/customer/bwcDetailPackage...` 搜索结果，再点击官方 `打开App` / `打开大众点评` / `立即参与` 按钮进入 App 详情页。这只是首页列表的路由兜底；不要自行拼接或猜测活动 URL。
+1. 从 Android Studio → Device Manager → Run 启动 `Pixel_API_35_DP`，启动期间保持 Android Studio 打开。
+2. 检查设备：
 
 ```bash
-adb shell am start -a android.intent.action.VIEW -d 'H5_DETAIL_URL' com.android.chrome
-```
-
-如果活动详情页、确认页或 H5 详情路由本身也提示 `当前活动太火爆了，请稍后再试～`（或活动繁忙、服务繁忙、限流、稍后再试等同义提示）：
-
-- 停止当前批次，不要反复提交或点击该活动。
-- 将该活动记录为临时不可用，而不是报名成功，并提示后续重试。
-- 如有必要只核查一次网络；确认官方提示后，不要继续反复修改模拟器或代理设置。
-
-如果首页可以展示缓存活动卡片、但详情页持续空白超过 30 秒，先只核查一次模拟器网络/代理；网络正常且多个详情页均失败时，判定为点评详情加载或服务路由不稳定，停止本批次继续报名。
-
-## 资源说明
-
-- `scripts/free_try_filter.py`：只读扫描和筛选脚本，输出 `reports/free_try_candidates_beijing.csv`
-- `scripts/batch_apply_free_try_adb.py`：批量 ADB 报名脚本，使用 `reports/free_try_apply_state.json` 记录本地状态
-- `scripts/apply_free_try_adb.py`：单活动调试脚本
-- `scripts/check_android_env.sh`：本地 Android / ADB / Python 环境检查脚本
-- `references/android-emulator-setup.md`：新电脑或新模拟器配置参考
-
-## 端到端流程
-
-1. 如果机器还没配置 Android 环境，先读取 `references/android-emulator-setup.md`，安装 Android Studio、SDK tools，并创建 `Pixel_API_35_DP` 模拟器。
-2. 在这台 Mac 上，使用已验证的可视化启动路径启动模拟器：
-
-   - 打开 **Android Studio** -> **Tools** -> **Device Manager**。
-   - 在 `Pixel_API_35_DP` 这一行点击三角形 **Run** 按钮，并在启动期间保持 Android Studio 打开。
-   - 此路径已在 Apple Silicon、Android Emulator `36.6.11` 环境验证：模拟器启动后可保持 ADB 连接并正常显示。
-   - 不要把临时工具/终端中的 `emulator ... &` 作为首选可视化启动方式：在此环境中该后台进程可能在启动后消失，不能据此直接判断 AVD 损坏。尝试 Device Manager 前，不要反复试验 `-gpu software`、已弃用的 `-gpu swiftshader_indirect` 或临时 Vulkan 参数。
-
-   只用命令确认 Device Manager 启动完成：
-
-```bash
-for i in $(seq 1 45); do
-  adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r' | grep -qx 1 && break
-  sleep 2
-done
 adb devices -l
+adb -s emulator-5554 shell getprop sys.boot_completed
 adb -s emulator-5554 shell wm size
 ```
 
-   预期看到已连接的 `emulator-5554`、启动属性为 `1`、分辨率为 `1080x2400`。如果失败，先检查模拟器图形日志，再考虑网络或代理；本地 HTTP/SOCKS 代理可能影响点评内容加载，但不能单独证明模拟器进程被终止。
+要求设备已连接、启动值为 `1`、分辨率为 `1080x2400`。
 
-3. 检查本地环境：
-
-```bash
-bash scripts/check_android_env.sh Pixel_API_35_DP
-```
-
-4. 确认模拟器状态：
+3. 运行唯一每日入口：
 
 ```bash
-adb devices -l
-adb shell wm size
-adb shell getprop sys.boot_completed
+python3 "$SKILL_DIR/scripts/run_free_try_auto.py" \
+  --route auto \
+  --max-apply 100
 ```
 
-期望屏幕尺寸是 `1080x2400`，批量报名脚本的坐标按这个布局设计。
+正式批次必须重新拉取当天列表并刷新所有当前详情，不得复用昨天的 CSV。
 
-5. 确认大众点评和微信已经安装并登录。若未登录，引导用户走官方登录流程；不要自动化或绕过安全验证。
-6. 扫描当前全部活动：
+4. 第一轮报名完成后，全量刷新列表和详情恰好一次。比较刷新前后的合规 ID，只处理新增或仍未解决的差集，最后输出 `verification_final_remaining`。若仍存在可重试合规活动，返回非零状态并打印 ID。不要无限复扫。
+5. 如果因人工验证退出，用户完成官方验证流程后，同一天续跑：
 
 ```bash
-python3 scripts/free_try_filter.py --max-pages 100 --workers 6 --top 10
+python3 "$SKILL_DIR/scripts/run_free_try_auto.py" \
+  --route auto \
+  --max-apply 100 \
+  --skip-daily-scan
 ```
 
-7. 统计剩余符合条件的美食活动：
+`--skip-daily-scan` 只允许用于当天已完成首次刷新的续跑；最终复查刷新仍会执行。
+
+6. 报告二次复扫新增/下架数量、新成功数、跳过项、暂停 ID/原因和最终剩余数。
+
+## 路由选择
+
+默认使用 `run_free_try_auto.py --route auto`。只有自动模式执行报名后的单轮复扫闭环；显式 `list` 和 `deeplink` 仅用于诊断。
+
+### 路线 A：可见列表交互（优先）
+
+列表正常展示筛选器和活动卡片时，使用 `list_apply_free_try_adb.py`：
+
+- 只点击底部导航上方完整可见的“免费抽”按钮
+- 将按钮绑定到附近套餐、门店和区域上下文，避免坐标变化导致重复打开
+- 从 App 当前详情的 `pageUrl` 日志解析真实 `offlineActivityId`
+- 与当天刷新 CSV 对照；新卡片可回退到官方详情缓存重新判断
+- 使用截图像素为主、UI 文本为辅验证详情、确认弹层、协议和结果
+- 对所有 UIAutomator 调用设置上限，避免动态 Picasso 页面永远无法空闲而卡死批次
+- 只有确认弹层明确未出现且详情按钮仍在时，才重试一次被 App 丢失的详情点击
+- 成功后立即写状态并回到列表
+- 验证码或未知状态一律暂停，不猜测
+
+在 `1080x2400` 模拟器上，`timing=card_total` 约 3–5 秒属于健康的核心提交耗时；连续超过 10 秒应排查加载或 UI dump。
+
+修改解析逻辑后先执行小范围只读测试：
 
 ```bash
-python3 - <<'PY'
-import csv, json
-from pathlib import Path
-state_path = Path("reports/free_try_apply_state.json")
-state = json.loads(state_path.read_text()) if state_path.exists() else {"success": {}}
-success = set((state.get("success") or {}).keys())
-remaining = []
-with open("reports/free_try_candidates_beijing.csv", encoding="utf-8-sig") as f:
-    for row in csv.DictReader(f):
-        if row.get("eligible") == "True" and (row.get("activityType") == "1" or row.get("isFood") == "True"):
-            if row.get("offlineActivityId") not in success:
-                remaining.append(row)
-print("remaining_food_eligible_not_success", len(remaining))
-for row in remaining[:20]:
-    print(row["offlineActivityId"], row["cost"], row.get("eligibilityRule"), row["districts"], row["regionName"], row["title"])
-PY
+python3 "$SKILL_DIR/scripts/list_apply_free_try_adb.py" \
+  --dry-run \
+  --max-scrolls 1
 ```
 
-8. 报名剩余活动。新电脑或新模拟器建议先用稳定模式：
+连续多张卡片的列表标题、解析 ID 和候选标题一致后，再允许提交。
 
-```bash
-python3 scripts/batch_apply_free_try_adb.py \
-  --food-only \
-  --max-apply 500 \
-  --detail-wait 4.5 \
-  --sheet-wait 3.0 \
-  --agreement-tap-wait 0.7 \
-  --result-wait 5.0 \
-  --retry-result-wait 3.5 \
-  --delay 1.0 \
-  --force-stop-before-open \
-  --precheck-detail \
-  --save-result-screenshot
-```
+### 路线 B：官方 App 详情直达（兜底）
 
-已验证稳定的 `1080x2400` 模拟器可以小批量测试加速模式：
+以下情况才使用 `direct_apply_free_try_adb.py`：
 
-```bash
-python3 scripts/batch_apply_free_try_adb.py \
-  --food-only \
-  --max-apply 20 \
-  --detail-wait 2.4 \
-  --sheet-wait 1.7 \
-  --agreement-tap-wait 0.3 \
-  --result-wait 3.2 \
-  --retry-result-wait 2.2 \
-  --delay 0.4
-```
+- 列表提示“当前活动太火爆”“网络异常”或其他仅首页故障
+- 列表可见卡片遍历完成，但刷新 CSV 仍有合规未提交 ID
 
-9. 每轮批量结束后，强停并重新进入免费试首页，再复扫：
+只处理剩余差集，并遵守：
 
-```bash
-adb shell am force-stop com.dianping.v1
-adb shell "am start -a android.intent.action.VIEW -d 'dianping://picassobox?picassoid=pexus-freetry-index%2Findex-bundle.js&notitlebar=true' -p com.dianping.v1"
-sleep 5
-python3 scripts/free_try_filter.py --max-pages 100 --workers 6 --top 0
-```
+- 复用列表路线的详情、确认、协议和结果验屏状态机
+- 每个 deeplink 前强停 App，清除旧 Picasso/结果遮罩
+- 点击前区分“我要报名”和长文本“已报名,看看其他活动”；后者直接补记成功状态
+- 静态空白壳没有目标标题时绝不点击
+- 详情/确认页出现服务繁忙或限流时停止批次
+- 列表仍能正常打开时，不把单个活动的验证结果扩大成账号或设备全局不可用
 
-重复扫描和报名，直到剩余符合条件美食活动数为 `0`。
+只有列表和已知合规 ID 都不可用时，才考虑从官方 H5 搜索结果进入 App；不得自行拼接活动 URL。
 
-## 操作注意事项
+## 人工验证状态
 
-- 扫描详情会缓存到 `.cache/details/`；只有怀疑数据过期时才使用 `--refresh-details`
-- 如果 `adb devices` 看不到模拟器，重启 ADB 并等待系统启动完成
-- 批量脚本每处理一个活动都会写入状态文件，重复运行会跳过已成功 ID
-- 如果截图显示打开的是上一个活动详情页，使用 `--force-stop-before-open --precheck-detail`
-- 如果协议勾选失败，检查 `*_agreement_failed.png`；不要在未检测到橙色协议选中态时点击确认
-- 稳定速度通常约 `10-14 秒/个`；进一步提速应先小批量验证
+- Yoda 可能分阶段出现：滑块失败后还可能要求按 `1-2-3-4` 顺序点选。让用户完成全部官方步骤，只根据最终业务页判断。
+- 验证完成后原详情可能暂时变成空白壳；返回列表并重新打开一次，不要反复刷新空白页。
+- 报名成功页之后可能叠加验证码。先记录已经可见的“报名成功”；后续遮罩不撤销成功结果。
+- 需要人工处理的项写入 `state.paused`，不要写成永久失败。
+
+## 状态和产物
+
+- `reports/free_try_candidates_beijing.csv`：当天最新候选数据
+- `reports/free_try_apply_state.json`：持久化 `success`、`failed`、`paused`
+- `/tmp/free_try_list_batch/`：列表路线 XML、文本和截图证据
+- `/tmp/free_try_direct_batch/`：详情兜底路线证据
+
+重新运行不得删除成功记录。协议未选中、解析失败、空白详情、未知 UI 等技术问题应允许重试；只有明确业务拒绝、账号不符合或活动结束才是终止跳过。
+
+## 故障处理
+
+- ADB 断开时，先从 Device Manager 重启 AVD，再考虑 GPU 或代理参数。
+- 定位异常时，对比 App `LocationSDK` 日志与 Android provider；保持 App 城市正确，不用距离文字判城市。
+- 多页面网络异常时，只核查一次模拟器代理、DNS/TCP 和国内出口；确认是业务限流后不要反复改网络。
+- UIAutomator 报 `could not get idle state` 时使用截图回退，不根据固定坐标点击推断成功。
+- 仅在新机器配置或深入排查模拟器/网络/定位时读取 `references/android-emulator-setup.md`。
+
+## 内置脚本
+
+- `scripts/run_free_try_auto.py`：每日扫描、双路由、二次复扫统一入口
+- `scripts/list_apply_free_try_adb.py`：可见列表交互主路线
+- `scripts/direct_apply_free_try_adb.py`：剩余 ID 的安全详情兜底
+- `scripts/free_try_filter.py`：只读扫描和筛选
+- `scripts/batch_apply_free_try_adb.py`：共享 ADB/状态工具和旧版诊断
+- `scripts/apply_free_try_adb.py`：单活动诊断
+- `scripts/check_android_env.sh`：环境检查

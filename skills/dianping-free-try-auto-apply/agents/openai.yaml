@@ -1,4 +1,4 @@
 interface:
   display_name: "大众点评免费试自动报名"
-  short_description: "从安卓模拟器环境配置到免费试美食筛选和报名自动化的完整流程"
-  default_prompt: "使用 $dianping-free-try-auto-apply 帮我配置安卓模拟器、扫描大众点评免费试美食活动，并按默认规则报名。"
+  short_description: "每日刷新免费试并通过列表点击、详情兜底和二次复扫安全补报"
+  default_prompt: "使用 $dianping-free-try-auto-apply 每日刷新大众点评免费试，按规则筛选后优先从列表交互点击报名，用详情直达补齐余量，并二次复扫确认无漏报。"

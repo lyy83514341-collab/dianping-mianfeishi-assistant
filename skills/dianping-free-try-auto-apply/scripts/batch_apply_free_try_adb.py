@@ -35,16 +35,34 @@ OFFICIAL_UNAVAILABLE_KEYWORDS = [
 ]
 
 
-def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, check=check, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+def run(
+    cmd: list[str],
+    check: bool = True,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        cmd,
+        check=check,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        timeout=timeout,
+    )
 
 
-def adb(serial: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+def adb(
+    serial: str,
+    *args: str,
+    check: bool = True,
+    timeout: float | None = None,
+) -> subprocess.CompletedProcess[str]:
     cmd = ["adb", "-s", serial, *args]
     last: subprocess.CalledProcessError | None = None
     for attempt in range(3):
         try:
-            return run(cmd, check=check)
+            return run(cmd, check=check, timeout=timeout)
         except subprocess.CalledProcessError as exc:
             if not check:
                 return exc
@@ -73,6 +91,12 @@ def agreement_checked(image_path: Path) -> bool:
 
 
 def ensure_agreement_checked(serial: str, out_dir: Path, activity_id: str, tap_wait: float) -> bool:
+    # The App can remember the agreement selection across consecutive
+    # applications. Never blindly toggle an already-selected checkbox off.
+    initial_shot = out_dir / f"{activity_id}_agreement_initial.png"
+    screenshot(serial, initial_shot)
+    if agreement_checked(initial_shot):
+        return True
     # Several adjacent points are tried because the custom Picasso checkbox has
     # a small hit target and occasionally drops taps during sheet animation.
     candidates = [(140, 2090), (160, 2090), (180, 2090), (300, 2090), (300, 2100)]
@@ -89,9 +113,25 @@ def ensure_agreement_checked(serial: str, out_dir: Path, activity_id: str, tap_w
 
 
 def dump_ui(serial: str, path: Path) -> str:
-    result = adb(serial, "exec-out", "uiautomator", "dump", "/dev/tty", check=False)
-    path.write_text(result.stdout, encoding="utf-8", errors="replace")
-    return result.stdout
+    # Picasso pages contain countdowns and animations that can keep Android's
+    # accessibility tree from ever reaching an "idle" state.  An unbounded
+    # uiautomator call has blocked a batch for many minutes, so UI text is a
+    # bounded fallback; screenshot predicates are the primary signal.
+    try:
+        result = adb(
+            serial,
+            "exec-out",
+            "sh",
+            "-c",
+            "timeout 4 uiautomator dump /dev/tty",
+            check=False,
+            timeout=5.5,
+        )
+        raw = result.stdout
+    except subprocess.TimeoutExpired:
+        raw = "ERROR: uiautomator dump timed out after 5.5s"
+    path.write_text(raw, encoding="utf-8", errors="replace")
+    return raw
 
 
 def ui_text(xmlish: str) -> str:
@@ -124,8 +164,15 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     path.write_text(json.dumps(state, ensure_ascii=False, indent=2))
 
 
-def eligible_rows(csv_path: Path, state: dict[str, Any], extra_skip: set[str], food_only: bool = False) -> list[dict[str, str]]:
+def eligible_rows(
+    csv_path: Path,
+    state: dict[str, Any],
+    extra_skip: set[str],
+    food_only: bool = False,
+    skip_failed: bool = False,
+) -> list[dict[str, str]]:
     success = set((state.get("success") or {}).keys())
+    failed = set((state.get("failed") or {}).keys()) if skip_failed else set()
     rows = []
     with csv_path.open(encoding="utf-8-sig") as handle:
         for row in csv.DictReader(handle):
@@ -134,7 +181,7 @@ def eligible_rows(csv_path: Path, state: dict[str, Any], extra_skip: set[str], f
                 continue
             if food_only and not (row.get("activityType") == "1" or row.get("isFood") == "True"):
                 continue
-            if activity_id in success or activity_id in extra_skip:
+            if activity_id in success or activity_id in failed or activity_id in extra_skip:
                 continue
             rows.append(row)
     return rows
@@ -180,6 +227,14 @@ def apply_one(
             return "security_stop", detail_text
         if any(keyword in detail_text for keyword in OFFICIAL_UNAVAILABLE_KEYWORDS):
             return "official_unavailable_stop", detail_text
+        # A Picasso detail page can render its static shell (title, price label,
+        # merchant section and tabs) while the actual activity payload never
+        # arrives. Do not tap the fixed CTA in that state: it is not an
+        # agreement-checkbox problem and can never become a valid submission.
+        generic_shell = all(marker in detail_text for marker in ("免费试活动详情", "适用商户", "活动流程"))
+        activity_title = (row.get("title") or "").strip()
+        if generic_shell and activity_title and activity_title not in detail_text:
+            return "detail_blank", "activity payload did not load; only the static detail shell is visible"
 
     # Fixed bottom CTA in the tested 1080x2400 layout. The active button is
     # right-aligned on some detail templates; tapping its visual center is more
@@ -233,7 +288,12 @@ def main() -> None:
     parser.add_argument("--serial", default=DEFAULT_SERIAL)
     parser.add_argument("--max-apply", type=int, default=20)
     parser.add_argument("--delay", type=float, default=0.8)
-    parser.add_argument("--skip", default="")
+    parser.add_argument("--skip", default="1349529257,1838507997")
+    parser.add_argument(
+        "--skip-failed",
+        action="store_true",
+        help="Skip activities already recorded as failed in this state file and continue with the next eligible activity.",
+    )
     parser.add_argument("--food-only", action="store_true")
     parser.add_argument("--detail-wait", type=float, default=3.2)
     parser.add_argument("--sheet-wait", type=float, default=2.4)
@@ -248,7 +308,13 @@ def main() -> None:
 
     state = load_state(args.state)
     extra_skip = {item.strip() for item in args.skip.split(",") if item.strip()}
-    rows = eligible_rows(args.csv, state, extra_skip, food_only=args.food_only)
+    rows = eligible_rows(
+        args.csv,
+        state,
+        extra_skip,
+        food_only=args.food_only,
+        skip_failed=args.skip_failed,
+    )
     rows = rows[: args.max_apply]
     waits = {
         "detail": args.detail_wait,
