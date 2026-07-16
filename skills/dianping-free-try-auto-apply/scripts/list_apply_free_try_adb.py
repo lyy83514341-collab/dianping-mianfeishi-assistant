@@ -240,6 +240,11 @@ def open_list(serial: str, wait: float) -> None:
     time.sleep(wait)
 
 
+def route_retry_delay(base: float, attempt: int, cap: float = 30.0) -> float:
+    """Return a bounded exponential delay for an index-only route failure."""
+    return min(cap, max(0.0, base) * (2 ** max(0, attempt - 1)))
+
+
 def extract_activity_id(serial: str) -> str:
     logs = adb(serial, "logcat", "-d", check=False).stdout
     current_detail_lines = [
@@ -451,9 +456,25 @@ def main() -> int:
     parser.add_argument("--sheet-wait", type=float, default=2.5)
     parser.add_argument("--result-wait", type=float, default=4.5)
     parser.add_argument("--agreement-tap-wait", type=float, default=0.45)
+    parser.add_argument(
+        "--route-unavailable-retries",
+        type=int,
+        default=3,
+        help="Reopen a busy/network-error list this many times before falling back.",
+    )
+    parser.add_argument(
+        "--route-unavailable-backoff",
+        type=float,
+        default=5.0,
+        help="Initial exponential backoff in seconds for list-route recovery.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Open and classify visible cards without submitting.")
     parser.add_argument("--skip-failed", action="store_true")
     args = parser.parse_args()
+    if args.route_unavailable_retries < 0:
+        parser.error("--route-unavailable-retries must be >= 0")
+    if args.route_unavailable_backoff < 0:
+        parser.error("--route-unavailable-backoff must be >= 0")
 
     state: dict[str, Any] = load_state(args.state)
     candidates = load_candidates(args.csv)
@@ -463,6 +484,7 @@ def main() -> int:
     stagnant = 0
     last_signature = ""
     list_recoveries = 0
+    route_unavailable_recoveries = 0
 
     open_list(args.serial, args.list_wait)
     while successes < args.max_success and scrolls <= args.max_scrolls:
@@ -476,8 +498,34 @@ def main() -> int:
         ).stdout:
             print("paused=human_verification page=list_window", flush=True)
             return 2
-        if "当前活动太火爆" in list_text or "网络异常" in list_text:
-            print("route_unavailable=list", flush=True)
+        unavailable_reason = next(
+            (keyword for keyword in ("当前活动太火爆", "网络异常") if keyword in list_text),
+            "",
+        )
+        if unavailable_reason:
+            if route_unavailable_recoveries < args.route_unavailable_retries:
+                route_unavailable_recoveries += 1
+                delay = route_retry_delay(
+                    args.route_unavailable_backoff,
+                    route_unavailable_recoveries,
+                )
+                print(
+                    "recover=route_unavailable "
+                    f"attempt={route_unavailable_recoveries}/{args.route_unavailable_retries} "
+                    f"backoff={delay:.1f} reason={unavailable_reason}",
+                    flush=True,
+                )
+                time.sleep(delay)
+                open_list(args.serial, args.list_wait)
+                scrolls = 0
+                stagnant = 0
+                last_signature = ""
+                continue
+            print(
+                "route_unavailable=list "
+                f"retries={route_unavailable_recoveries} reason={unavailable_reason}",
+                flush=True,
+            )
             return 3
         if "全部商区" not in list_text:
             if list_recoveries < 2:

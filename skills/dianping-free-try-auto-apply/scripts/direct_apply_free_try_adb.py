@@ -33,6 +33,28 @@ from list_apply_free_try_adb import (
 DEFAULT_OUT_DIR = Path("/tmp/free_try_direct_batch")
 
 
+def planned_rows(
+    candidates: dict[str, dict[str, str]],
+    state: dict[str, Any],
+) -> list[dict[str, str]]:
+    """Plan unresolved rows, placing recently blank details behind untried work."""
+    success = state.get("success") or {}
+    failures = state.get("failed") or {}
+    paused = state.get("paused") or {}
+    prioritized: list[tuple[int, int, dict[str, str]]] = []
+    for position, (activity_id, row) in enumerate(candidates.items()):
+        if not eligible(row) or activity_id in success:
+            continue
+        previous = failures.get(activity_id) or {}
+        if previous.get("status") in TERMINAL_FAILURE_STATUSES:
+            continue
+        paused_status = (paused.get(activity_id) or {}).get("status")
+        priority = 1 if paused_status == "detail_blank" else 0
+        prioritized.append((priority, position, row))
+    prioritized.sort(key=lambda item: (item[0], item[1]))
+    return [row for _, _, row in prioritized]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv", type=Path, default=DEFAULT_CSV)
@@ -45,23 +67,25 @@ def main() -> int:
     parser.add_argument("--sheet-wait", type=float, default=2.5)
     parser.add_argument("--result-wait", type=float, default=4.5)
     parser.add_argument("--agreement-tap-wait", type=float, default=0.45)
+    parser.add_argument(
+        "--max-consecutive-detail-blank",
+        type=int,
+        default=3,
+        help="Pause this route after this many consecutive verified blank details.",
+    )
     parser.add_argument("--force-stop-before-open", action="store_true")
     args = parser.parse_args()
+    if args.max_consecutive_detail_blank < 1:
+        parser.error("--max-consecutive-detail-blank must be >= 1")
 
     state: dict[str, Any] = load_state(args.state)
     candidates = load_candidates(args.csv)
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    rows = []
-    for activity_id, row in candidates.items():
-        if not eligible(row) or activity_id in (state.get("success") or {}):
-            continue
-        previous = (state.get("failed") or {}).get(activity_id) or {}
-        if previous.get("status") in TERMINAL_FAILURE_STATUSES:
-            continue
-        rows.append(row)
+    rows = planned_rows(candidates, state)
 
     successes = 0
     attempts = 0
+    consecutive_detail_blank = 0
     print(f"direct_planned={len(rows)}", flush=True)
     for row in rows:
         if successes >= args.max_success or attempts >= args.max_attempts:
@@ -87,6 +111,7 @@ def main() -> int:
         print(f"direct_id={activity_id} status={status}", flush=True)
 
         if status in {"success", "already_applied"}:
+            consecutive_detail_blank = 0
             state.setdefault("success", {})[activity_id] = record_for(
                 row, "success", "official App detail-deeplink fallback"
             )
@@ -118,6 +143,22 @@ def main() -> int:
             row, status, (text[-300:] or "route-specific technical state")
         )
         save_state(args.state, state)
+        if status == "detail_blank":
+            consecutive_detail_blank += 1
+            print(
+                "direct_detail_blank_streak="
+                f"{consecutive_detail_blank}/{args.max_consecutive_detail_blank}",
+                flush=True,
+            )
+            if consecutive_detail_blank >= args.max_consecutive_detail_blank:
+                print(
+                    "paused=route_detail_blank_streak "
+                    f"count={consecutive_detail_blank} last_id={activity_id}",
+                    flush=True,
+                )
+                return 5
+        else:
+            consecutive_detail_blank = 0
         if status == "unknown":
             print(f"paused=unknown id={activity_id}", flush=True)
             return 4

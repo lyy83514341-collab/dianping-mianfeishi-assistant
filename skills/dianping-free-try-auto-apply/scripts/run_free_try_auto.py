@@ -19,6 +19,7 @@ def run(cmd: list[str]) -> int:
 
 
 TERMINAL_FAILURES = {"app_rejected", "not_eligible", "account_ineligible", "activity_ended"}
+RETRYABLE_ROUTE_PAUSE = 5
 
 
 def eligible_ids(csv_path: Path) -> set[str]:
@@ -84,6 +85,10 @@ def apply_routes(args: argparse.Namespace, python: str) -> int:
             str(args.state),
             "--max-success",
             str(args.max_apply),
+            "--route-unavailable-retries",
+            str(args.list_unavailable_retries),
+            "--route-unavailable-backoff",
+            str(args.list_unavailable_backoff),
             "--skip-failed",
         ]
         if args.dry_run:
@@ -114,6 +119,8 @@ def apply_routes(args: argparse.Namespace, python: str) -> int:
         str(args.max_apply),
         "--max-attempts",
         str(args.max_apply),
+        "--max-consecutive-detail-blank",
+        str(args.direct_blank_streak_limit),
         "--force-stop-before-open",
     ]
     if args.dry_run:
@@ -128,6 +135,9 @@ def main() -> int:
     parser.add_argument("--max-apply", type=int, default=100)
     parser.add_argument("--max-pages", type=int, default=100)
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--list-unavailable-retries", type=int, default=3)
+    parser.add_argument("--list-unavailable-backoff", type=float, default=5.0)
+    parser.add_argument("--direct-blank-streak-limit", type=int, default=3)
     parser.add_argument("--serial", default="emulator-5554")
     parser.add_argument("--state", type=Path, default=Path("reports/free_try_apply_state.json"))
     parser.add_argument("--csv", type=Path, default=Path("reports/free_try_candidates_beijing.csv"))
@@ -138,6 +148,12 @@ def main() -> int:
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+    if args.list_unavailable_retries < 0:
+        parser.error("--list-unavailable-retries must be >= 0")
+    if args.list_unavailable_backoff < 0:
+        parser.error("--list-unavailable-backoff must be >= 0")
+    if args.direct_blank_streak_limit < 1:
+        parser.error("--direct-blank-streak-limit must be >= 1")
 
     python = sys.executable
     if not args.skip_daily_scan:
@@ -147,8 +163,12 @@ def main() -> int:
             return rc
 
     rc = apply_routes(args, python)
-    if rc or args.dry_run or args.route != "auto":
+    if args.dry_run or args.route != "auto":
         return rc
+    if rc not in {0, RETRYABLE_ROUTE_PAUSE}:
+        return rc
+    if rc == RETRYABLE_ROUTE_PAUSE:
+        print("apply_routes_paused=retryable_route_state; continuing_to_verification", flush=True)
 
     before_ids = eligible_ids(args.csv)
     unresolved_before = remaining_ids(args.csv, args.state)
@@ -174,8 +194,10 @@ def main() -> int:
     if unresolved_after:
         print(f"verification_apply_delta count={len(unresolved_after)}", flush=True)
         rc = apply_routes(args, python)
-        if rc:
+        if rc not in {0, RETRYABLE_ROUTE_PAUSE}:
             return rc
+        if rc == RETRYABLE_ROUTE_PAUSE:
+            print("verification_route_paused=retryable_route_state", flush=True)
 
     final_remaining = remaining_ids(args.csv, args.state)
     print(f"verification_final_remaining={len(final_remaining)}", flush=True)
